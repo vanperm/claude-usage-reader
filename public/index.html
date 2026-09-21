@@ -4,24 +4,42 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Claude Usage & Cost Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+<div class="glow"></div>
+
 <div class="app">
-  <header class="app-header">
-    <h1>Claude Usage &amp; Cost Dashboard</h1>
-    <p class="subtitle">Local token usage, estimated against API pricing.</p>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">&#9670;</span>
+      <div class="brand-text">
+        <span class="brand-name">Claude<span class="brand-accent">Usage</span></span>
+        <span class="subtitle">Exact spend from local session logs, priced at API rates.</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="live-pill"><span class="live-dot" aria-hidden="true"></span>Local data &middot; scanned <span id="last-scanned">&mdash;</span></span>
+      <button id="refresh-btn" class="icon-btn" type="button" title="Rescan logs" aria-label="Rescan logs">&#8635;</button>
+    </div>
   </header>
 
-  <nav class="tabs" role="tablist">
-    <button class="tab" data-tab="code" role="tab" aria-selected="true">Claude Code</button>
-    <button class="tab" data-tab="webchat" role="tab" aria-selected="false">Web Chat (estimate)</button>
-    <button class="tab" data-tab="pricing" role="tab" aria-selected="false">Pricing</button>
+  <nav class="tabs-row" role="tablist">
+    <div class="tabs">
+      <button class="tab" data-tab="code" role="tab" aria-selected="true">Claude Code</button>
+      <button class="tab" data-tab="webchat" role="tab" aria-selected="false">Web Chat <span class="tab-flag">est.</span></button>
+      <button class="tab" data-tab="pricing" role="tab" aria-selected="false">Pricing</button>
+    </div>
+    <span class="tabs-meta">No network calls &middot; reads ~/.claude/projects</span>
   </nav>
 
   <main>
     <section id="panel-code" class="panel" data-panel="code">
       <div class="stat-row" id="code-stats"></div>
+      <p id="code-unpriced-note" class="muted note-asterisk" hidden>* cost total includes usage from a model with no rate set &mdash; add it in the Pricing tab for an exact figure.</p>
 
       <div class="card">
         <h2>Cost by day</h2>
@@ -46,14 +64,15 @@
 
     <section id="panel-webchat" class="panel" data-panel="webchat" hidden>
       <div class="banner">
-        Estimate only. Character-based token guess (chars ÷ 4) from a manual
-        claude.ai data export — excludes system prompts, tool calls, thinking
+        <span class="banner-tag">Estimate</span>
+        Character-based token guess (chars &divide; 4) from a manual claude.ai
+        data export &mdash; excludes system prompts, tool calls, thinking
         tokens, and prompt caching. Always undercounts real spend.
       </div>
 
       <div class="card">
         <h2>Import export</h2>
-        <p class="muted">claude.ai → Settings → Account → Export data, then pick the <code>conversations.json</code> file below.</p>
+        <p class="muted">claude.ai &rarr; Settings &rarr; Account &rarr; Export data, then pick the <code>conversations.json</code> file below.</p>
         <div class="import-row">
           <input type="file" id="webchat-file" accept="application/json" />
           <label for="webchat-model">Price against model:</label>

@@ -2,8 +2,23 @@
   'use strict';
 
   const fmtMoney = (n) => (n == null ? '—' : `$${n.toFixed(2)}`);
-  const fmtTokens = (n) => (n == null ? '—' : n.toLocaleString());
+  const fmtTokens = (n) => {
+    if (n == null) return '—';
+    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+    return n.toLocaleString();
+  };
   const CAT_COLORS = ['--cat-1', '--cat-2', '--cat-3', '--cat-4', '--cat-5', '--cat-6', '--cat-7', '--cat-8'];
+
+  let lastUsage = null;
+  let lastWebchat = null;
+
+  const escapeHtml = (s) =>
+    String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  function shortPath(p) {
+    const parts = String(p).split('/').filter(Boolean);
+    const short = parts.length <= 2 ? p : `…/${parts.slice(-2).join('/')}`;
+    return `<span title="${escapeHtml(p)}">${escapeHtml(short)}</span>`;
+  }
 
   const tooltip = document.getElementById('tooltip');
   function showTooltip(evt, text) {
@@ -15,17 +30,122 @@
   function hideTooltip() { tooltip.hidden = true; }
 
   // ---------- Tabs ----------
+  const tabsEl = document.querySelector('.tabs');
+  const tabIndicator = document.createElement('div');
+  tabIndicator.className = 'tab-indicator';
+  tabsEl.prepend(tabIndicator);
+
+  function moveIndicatorTo(btn) {
+    tabIndicator.style.width = `${btn.offsetWidth}px`;
+    tabIndicator.style.transform = `translateX(${btn.offsetLeft}px)`;
+  }
+
+  function rerenderVisibleCharts(tabName) {
+    if (tabName === 'code' && lastUsage) renderUsageCharts(lastUsage);
+    if (tabName === 'webchat' && lastWebchat) renderWebchatChart(lastWebchat);
+  }
+
   document.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-selected', 'false'));
       btn.setAttribute('aria-selected', 'true');
       document.querySelectorAll('.panel').forEach((p) => { p.hidden = true; });
       document.getElementById(`panel-${btn.dataset.tab}`).hidden = false;
+      moveIndicatorTo(btn);
+      requestAnimationFrame(() => rerenderVisibleCharts(btn.dataset.tab));
     });
   });
 
-  // ---------- Bar chart ----------
-  function renderBarChart(container, items, { valueKey, labelKey, colorVar, formatValue, formatTooltip }) {
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const active = document.querySelector('.tab[aria-selected="true"]');
+      if (active) rerenderVisibleCharts(active.dataset.tab);
+    }, 150);
+  });
+
+  window.addEventListener('load', () => {
+    const active = document.querySelector('.tab[aria-selected="true"]');
+    if (active) moveIndicatorTo(active);
+  });
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      const active = document.querySelector('.tab[aria-selected="true"]');
+      if (active) moveIndicatorTo(active);
+    });
+  }
+
+  // ---------- Charts (SVG, shared scale/grid) ----------
+  const CHART_H = 220;
+  const CHART_MARGIN = { top: 16, right: 14, bottom: 30, left: 50 };
+
+  function niceMax(v) {
+    if (v <= 0) return 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(v)));
+    const norm = v / mag;
+    const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+    return step * mag;
+  }
+
+  function fmtTick(v) {
+    if (v === 0) return '$0';
+    if (v < 10) return `$${v.toFixed(1)}`;
+    return `$${Math.round(v)}`;
+  }
+
+  // 1 viewBox unit == 1 real CSS pixel (viewBox width == measured container width),
+  // so SVG text never gets non-uniformly scaled/stretched by preserveAspectRatio.
+  function buildScale(items, valueKey, W) {
+    const plotW = W - CHART_MARGIN.left - CHART_MARGIN.right;
+    const plotH = CHART_H - CHART_MARGIN.top - CHART_MARGIN.bottom;
+    const max = niceMax(Math.max(...items.map((d) => d[valueKey]), 0.0001) * 1.08);
+    const n = items.length;
+    const x = (i) => CHART_MARGIN.left + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+    const bandX = (i) => CHART_MARGIN.left + (i + 0.5) * (plotW / n);
+    const y = (v) => CHART_MARGIN.top + plotH - (v / max) * plotH;
+    const baseline = y(0);
+    return { W, plotW, plotH, max, x, bandX, y, baseline, n };
+  }
+
+  function gridMarkup(scale) {
+    const ticks = [0, scale.max * 0.5, scale.max];
+    return ticks
+      .map((v) => {
+        const yy = scale.y(v);
+        return `<line x1="${CHART_MARGIN.left}" y1="${yy}" x2="${scale.W - CHART_MARGIN.right}" y2="${yy}" class="grid-line" />
+<text x="${CHART_MARGIN.left - 8}" y="${yy + 4}" class="grid-label" text-anchor="end">${fmtTick(v)}</text>`;
+      })
+      .join('');
+  }
+
+  function truncateLabel(s, max) {
+    return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+  }
+
+  function xLabelsMarkup(items, labelKey, scale, xFn) {
+    const fn = xFn || scale.x;
+    const step = Math.max(1, Math.ceil(items.length / 7));
+    const maxLen = Math.max(6, Math.floor((scale.plotW / items.length) / 6));
+    return items
+      .map((item, i) => {
+        if (i % step !== 0 && i !== items.length - 1) return '';
+        return `<text x="${fn(i)}" y="${CHART_H - 8}" class="grid-x-label" text-anchor="middle">${escapeHtml(truncateLabel(String(item[labelKey]), maxLen))}</text>`;
+      })
+      .join('');
+  }
+
+  function wireChartHover(svg, items, scale, formatTooltip, hitSelector) {
+    svg.querySelectorAll(hitSelector).forEach((el) => {
+      const i = Number(el.dataset.i);
+      const item = items[i];
+      el.addEventListener('mouseenter', (e) => showTooltip(e, formatTooltip(item)));
+      el.addEventListener('mousemove', (e) => showTooltip(e, formatTooltip(item)));
+      el.addEventListener('mouseleave', hideTooltip);
+    });
+  }
+
+  function renderLineChart(container, items, { valueKey, labelKey, formatTooltip }) {
     container.innerHTML = '';
     if (!items.length) {
       container.classList.add('empty');
@@ -33,35 +153,71 @@
       return;
     }
     container.classList.remove('empty');
+    const W = container.clientWidth || 640;
+    const scale = buildScale(items, valueKey, W);
 
-    const max = Math.max(...items.map((d) => d[valueKey]), 0.0001);
-    const rootStyle = getComputedStyle(document.documentElement);
+    const points = items.map((item, i) => ({ x: scale.x(i), y: scale.y(item[valueKey]) }));
+    const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    const areaPath = `${linePath} L ${points[points.length - 1].x.toFixed(1)},${scale.baseline} L ${points[0].x.toFixed(1)},${scale.baseline} Z`;
 
-    items.forEach((item, i) => {
-      const col = document.createElement('div');
-      col.className = 'bar-col';
+    const dots = points
+      .map((p, i) => {
+        const isLast = i === points.length - 1;
+        return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${isLast ? 5 : 3.5}" class="lc-dot${isLast ? ' lc-dot-last' : ''}" />
+<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="12" class="lc-hit" data-i="${i}" fill="transparent" />`;
+      })
+      .join('');
 
-      const bar = document.createElement('div');
-      bar.className = 'bar';
-      const heightPct = Math.max((item[valueKey] / max) * 100, 2);
-      bar.style.height = `${heightPct}%`;
-      const color = colorVar === 'sequential'
-        ? rootStyle.getPropertyValue('--seq-blue-400')
-        : rootStyle.getPropertyValue(CAT_COLORS[i % CAT_COLORS.length]);
-      bar.style.background = color.trim();
+    container.innerHTML = `<svg viewBox="0 0 ${W} ${CHART_H}" class="line-chart">
+<defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="var(--gold)" stop-opacity="0.32" />
+<stop offset="100%" stop-color="var(--gold)" stop-opacity="0" />
+</linearGradient></defs>
+${gridMarkup(scale)}
+<path d="${areaPath}" fill="url(#areaGrad)" stroke="none" />
+<path d="${linePath}" fill="none" class="lc-line" />
+${dots}
+${xLabelsMarkup(items, labelKey, scale)}
+</svg>`;
 
-      bar.addEventListener('mouseenter', (e) => showTooltip(e, formatTooltip(item)));
-      bar.addEventListener('mousemove', (e) => showTooltip(e, formatTooltip(item)));
-      bar.addEventListener('mouseleave', hideTooltip);
+    wireChartHover(container, items, scale, formatTooltip, '.lc-hit');
+  }
 
-      const label = document.createElement('div');
-      label.className = 'bar-label';
-      label.textContent = item[labelKey];
+  function roundedTopBarPath(x, w, yTop, yBase, r) {
+    const rr = Math.max(0, Math.min(r, w / 2, Math.max(0, yBase - yTop)));
+    return `M ${x},${yBase} L ${x},${yTop + rr} Q ${x},${yTop} ${x + rr},${yTop} L ${x + w - rr},${yTop} Q ${x + w},${yTop} ${x + w},${yTop + rr} L ${x + w},${yBase} Z`;
+  }
 
-      col.appendChild(bar);
-      col.appendChild(label);
-      container.appendChild(col);
-    });
+  function renderCatBarChart(container, items, { valueKey, labelKey, formatTooltip }) {
+    container.innerHTML = '';
+    if (!items.length) {
+      container.classList.add('empty');
+      container.textContent = 'No data yet.';
+      return;
+    }
+    container.classList.remove('empty');
+    const W = container.clientWidth || 640;
+    const scale = buildScale(items, valueKey, W);
+    const slot = scale.plotW / items.length;
+    const barW = Math.min(slot * 0.5, 46);
+
+    const bars = items
+      .map((item, i) => {
+        const cx = scale.bandX(i);
+        const yTop = scale.y(item[valueKey]);
+        const path = roundedTopBarPath(cx - barW / 2, barW, Math.min(yTop, scale.baseline - 2), scale.baseline, 4);
+        const color = `var(${CAT_COLORS[i % CAT_COLORS.length]})`;
+        return `<path d="${path}" fill="${color}" class="bar-shape" data-i="${i}" />`;
+      })
+      .join('');
+
+    container.innerHTML = `<svg viewBox="0 0 ${W} ${CHART_H}" class="line-chart">
+${gridMarkup(scale)}
+${bars}
+${xLabelsMarkup(items, labelKey, scale, scale.bandX)}
+</svg>`;
+
+    wireChartHover(container, items, scale, formatTooltip, '.bar-shape');
   }
 
   // ---------- Stat tiles ----------
@@ -87,9 +243,24 @@
   }
 
   // ---------- Claude Code tab ----------
+  function renderUsageCharts(data) {
+    renderLineChart(document.getElementById('code-day-chart'), data.byDay, {
+      valueKey: 'cost',
+      labelKey: 'day',
+      formatTooltip: (d) => `${d.day}: ${fmtMoney(d.cost)} (${fmtTokens(d.totalTokens)} tok)${d.unpriced ? ' *unpriced included' : ''}`,
+    });
+
+    renderCatBarChart(document.getElementById('code-model-chart'), data.byModel, {
+      valueKey: 'cost',
+      labelKey: 'model',
+      formatTooltip: (d) => `${d.model}: ${fmtMoney(d.cost)} (${fmtTokens(d.totalTokens)} tok)${d.unpriced ? ' — unpriced' : ''}`,
+    });
+  }
+
   async function loadUsage() {
     const res = await fetch('/api/usage');
     const data = await res.json();
+    lastUsage = data;
 
     renderStats(document.getElementById('code-stats'), [
       { label: 'Total tokens', value: fmtTokens(data.overall.totalTokens) },
@@ -98,24 +269,18 @@
       { label: 'Sessions', value: fmtTokens(data.sessions.length) },
     ]);
 
-    renderBarChart(document.getElementById('code-day-chart'), data.byDay, {
-      valueKey: 'cost',
-      labelKey: 'day',
-      colorVar: 'sequential',
-      formatTooltip: (d) => `${d.day}: ${fmtMoney(d.cost)} (${fmtTokens(d.totalTokens)} tok)${d.unpriced ? ' *unpriced included' : ''}`,
-    });
+    const noteEl = document.getElementById('code-unpriced-note');
+    noteEl.hidden = !data.overall.unpriced;
 
-    renderBarChart(document.getElementById('code-model-chart'), data.byModel, {
-      valueKey: 'cost',
-      labelKey: 'model',
-      colorVar: 'categorical',
-      formatTooltip: (d) => `${d.model}: ${fmtMoney(d.cost)} (${fmtTokens(d.totalTokens)} tok)${d.unpriced ? ' — unpriced' : ''}`,
-    });
+    renderUsageCharts(data);
+
+    const stamp = document.getElementById('last-scanned');
+    if (stamp) stamp.textContent = new Date().toLocaleTimeString();
 
     renderTable(
       document.getElementById('code-project-table'),
       [
-        { header: 'Project', render: (r) => r.project },
+        { header: 'Project', render: (r) => shortPath(r.project) },
         { header: 'Tokens', num: true, render: (r) => fmtTokens(r.totalTokens) },
         { header: 'Cost', num: true, render: (r) => (r.unpriced ? `${fmtMoney(r.cost)} *` : fmtMoney(r.cost)) },
       ],
@@ -126,8 +291,8 @@
       document.getElementById('code-session-table'),
       [
         { header: 'Last active', render: (r) => (r.lastTimestamp || '').replace('T', ' ').slice(0, 19) },
-        { header: 'Project', render: (r) => r.project },
-        { header: 'Model(s)', render: (r) => r.models.join(', ') },
+        { header: 'Project', render: (r) => shortPath(r.project) },
+        { header: 'Model(s)', render: (r) => escapeHtml(r.models.join(', ')) },
         { header: 'Tokens', num: true, render: (r) => fmtTokens(r.totalTokens) },
         { header: 'Cost', num: true, render: (r) => (r.unpriced ? `${fmtMoney(r.cost)} *` : fmtMoney(r.cost)) },
       ],
@@ -239,8 +404,17 @@
     renderWebchat(data);
   });
 
+  function renderWebchatChart(data) {
+    renderLineChart(document.getElementById('webchat-day-chart'), data.byDay, {
+      valueKey: 'cost',
+      labelKey: 'day',
+      formatTooltip: (d) => `${d.day}: ${fmtMoney(d.cost)} (~${fmtTokens(d.totalTokens)} tok)`,
+    });
+  }
+
   function renderWebchat(data) {
     if (!data) return;
+    lastWebchat = data;
     document.getElementById('webchat-results').hidden = false;
 
     renderStats(document.getElementById('webchat-stats'), [
@@ -250,17 +424,12 @@
       { label: 'Priced against', value: data.model },
     ]);
 
-    renderBarChart(document.getElementById('webchat-day-chart'), data.byDay, {
-      valueKey: 'cost',
-      labelKey: 'day',
-      colorVar: 'sequential',
-      formatTooltip: (d) => `${d.day}: ${fmtMoney(d.cost)} (~${fmtTokens(d.totalTokens)} tok)`,
-    });
+    renderWebchatChart(data);
 
     renderTable(
       document.getElementById('webchat-conv-table'),
       [
-        { header: 'Conversation', render: (r) => r.name },
+        { header: 'Conversation', render: (r) => escapeHtml(r.name) },
         { header: 'Date', render: (r) => (r.createdAt || '').slice(0, 10) || '—' },
         { header: 'Est. tokens', num: true, render: (r) => fmtTokens(r.totalTokens) },
         { header: 'Est. cost', num: true, render: (r) => fmtMoney(r.cost) },
@@ -273,6 +442,21 @@
     const res = await fetch('/api/webchat');
     const data = await res.json();
     if (data) renderWebchat(data);
+  }
+
+  // ---------- Refresh ----------
+  const refreshBtn = document.getElementById('refresh-btn');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      refreshBtn.disabled = true;
+      refreshBtn.classList.add('spinning');
+      try {
+        await loadUsage();
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.classList.remove('spinning');
+      }
+    });
   }
 
   // ---------- Init ----------
