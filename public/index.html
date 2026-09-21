@@ -41,6 +41,27 @@
       <div class="stat-row" id="code-stats"></div>
       <p id="code-unpriced-note" class="muted note-asterisk" hidden>* cost total includes usage from a model with no rate set &mdash; add it in the Pricing tab for an exact figure.</p>
 
+      <div class="card" id="plan-usage-card" hidden>
+        <h2>Plan usage limits</h2>
+        <div class="limit-row">
+          <div class="limit-meta">
+            <div class="limit-label">Current session</div>
+            <div class="limit-sub">Rolling 5-hour window</div>
+          </div>
+          <div class="limit-bar"><div class="limit-fill" id="plan-session-fill"></div></div>
+          <div class="limit-pct" id="plan-session-pct">&mdash;</div>
+        </div>
+        <div class="limit-row">
+          <div class="limit-meta">
+            <div class="limit-label">Weekly (all models)</div>
+            <div class="limit-sub">Rolling 7-day window</div>
+          </div>
+          <div class="limit-bar"><div class="limit-fill" id="plan-weekly-fill"></div></div>
+          <div class="limit-pct" id="plan-weekly-pct">&mdash;</div>
+        </div>
+        <p class="muted" id="plan-usage-updated"></p>
+      </div>
+
       <div class="card">
         <h2>Cost by day</h2>
         <div id="code-day-chart" class="chart"></div>

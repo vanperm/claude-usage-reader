@@ -444,6 +444,38 @@ ${xLabelsMarkup(items, labelKey, scale, scale.bandX)}
     if (data) renderWebchat(data);
   }
 
+  // ---------- Plan usage limits ----------
+  function setLimitBar(fillId, pctId, percent) {
+    const fill = document.getElementById(fillId);
+    const pctEl = document.getElementById(pctId);
+    const pct = Math.max(0, Math.min(100, percent));
+    fill.style.width = `${pct}%`;
+    fill.classList.toggle('limit-warn', pct >= 85);
+    pctEl.textContent = `${pct}% used`;
+  }
+
+  async function loadPlanUsage() {
+    const res = await fetch('/api/plan-usage');
+    const data = await res.json();
+    const card = document.getElementById('plan-usage-card');
+    if (!data || data.sessionPercent == null || data.weeklyPercent == null) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    setLimitBar('plan-session-fill', 'plan-session-pct', data.sessionPercent);
+    setLimitBar('plan-weekly-fill', 'plan-weekly-pct', data.weeklyPercent);
+
+    const updatedEl = document.getElementById('plan-usage-updated');
+    if (data.lastUpdated) {
+      const ageMs = Date.now() - data.lastUpdated;
+      const stale = ageMs > 6 * 60 * 60 * 1000;
+      updatedEl.textContent = `Last updated ${new Date(data.lastUpdated).toLocaleString()} (from the Claude desktop app's local cache)${stale ? ' — looks stale, open the Claude app to refresh it' : ''}`;
+    } else {
+      updatedEl.textContent = '';
+    }
+  }
+
   // ---------- Refresh ----------
   const refreshBtn = document.getElementById('refresh-btn');
   if (refreshBtn) {
@@ -451,7 +483,7 @@ ${xLabelsMarkup(items, labelKey, scale, scale.bandX)}
       refreshBtn.disabled = true;
       refreshBtn.classList.add('spinning');
       try {
-        await loadUsage();
+        await Promise.all([loadUsage(), loadPlanUsage()]);
       } finally {
         refreshBtn.disabled = false;
         refreshBtn.classList.remove('spinning');
@@ -463,6 +495,7 @@ ${xLabelsMarkup(items, labelKey, scale, scale.bandX)}
   (async function init() {
     await loadPricing();
     await loadUsage();
+    await loadPlanUsage();
     await loadSavedWebchat();
   })();
 })();

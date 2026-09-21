@@ -15,6 +15,41 @@ const DATA_DIR = path.join(ROOT, 'data');
 const WEBCHAT_FILE = path.join(DATA_DIR, 'webchat-import.json');
 const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 
+function planUsageFilePath() {
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'plan-usage-history.json');
+  }
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+    return path.join(appData, 'Claude', 'plan-usage-history.json');
+  }
+  return path.join(os.homedir(), '.config', 'Claude', 'plan-usage-history.json');
+}
+
+async function readPlanUsage() {
+  let raw;
+  try {
+    raw = await fsp.readFile(planUsageFilePath(), 'utf8');
+  } catch {
+    return null;
+  }
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const samples = data.samples;
+  if (!Array.isArray(samples) || samples.length === 0) return null;
+  const latest = samples[samples.length - 1];
+  if (!latest || !latest.u) return null;
+  return {
+    sessionPercent: latest.u.fh ?? null,
+    weeklyPercent: latest.u.sd ?? null,
+    lastUpdated: latest.t ?? null,
+  };
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -309,6 +344,11 @@ const server = http.createServer(async (req, res) => {
       const pricing = readPricing();
       const usage = await scanUsage(pricing);
       sendJson(res, 200, usage);
+      return;
+    }
+
+    if (pathname === '/api/plan-usage' && req.method === 'GET') {
+      sendJson(res, 200, await readPlanUsage());
       return;
     }
 
