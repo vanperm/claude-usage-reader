@@ -1,0 +1,13 @@
+{
+  "name": "claude-usage-reader",
+  "version": "1.0.0",
+  "description": "Local dashboard for Claude Code token usage/cost, with an estimate tab for claude.ai web chat exports",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

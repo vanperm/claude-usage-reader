@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Claude Usage & Cost Dashboard</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="app-header">
+    <h1>Claude Usage &amp; Cost Dashboard</h1>
+    <p class="subtitle">Local token usage, estimated against API pricing.</p>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" data-tab="code" role="tab" aria-selected="true">Claude Code</button>
+    <button class="tab" data-tab="webchat" role="tab" aria-selected="false">Web Chat (estimate)</button>
+    <button class="tab" data-tab="pricing" role="tab" aria-selected="false">Pricing</button>
+  </nav>
+
+  <main>
+    <section id="panel-code" class="panel" data-panel="code">
+      <div class="stat-row" id="code-stats"></div>
+
+      <div class="card">
+        <h2>Cost by day</h2>
+        <div id="code-day-chart" class="chart"></div>
+      </div>
+
+      <div class="card">
+        <h2>Cost by model</h2>
+        <div id="code-model-chart" class="chart"></div>
+      </div>
+
+      <div class="card">
+        <h2>By project</h2>
+        <div class="table-wrap"><table id="code-project-table"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>Sessions</h2>
+        <div class="table-wrap"><table id="code-session-table"></table></div>
+      </div>
+    </section>
+
+    <section id="panel-webchat" class="panel" data-panel="webchat" hidden>
+      <div class="banner">
+        Estimate only. Character-based token guess (chars ÷ 4) from a manual
+        claude.ai data export — excludes system prompts, tool calls, thinking
+        tokens, and prompt caching. Always undercounts real spend.
+      </div>
+
+      <div class="card">
+        <h2>Import export</h2>
+        <p class="muted">claude.ai → Settings → Account → Export data, then pick the <code>conversations.json</code> file below.</p>
+        <div class="import-row">
+          <input type="file" id="webchat-file" accept="application/json" />
+          <label for="webchat-model">Price against model:</label>
+          <select id="webchat-model"></select>
+          <button id="webchat-import-btn" disabled>Import</button>
+        </div>
+        <p id="webchat-status" class="muted"></p>
+      </div>
+
+      <div id="webchat-results" hidden>
+        <div class="stat-row" id="webchat-stats"></div>
+        <div class="card">
+          <h2>Estimated cost by day</h2>
+          <div id="webchat-day-chart" class="chart"></div>
+        </div>
+        <div class="card">
+          <h2>Conversations</h2>
+          <div class="table-wrap"><table id="webchat-conv-table"></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-pricing" class="panel" data-panel="pricing" hidden>
+      <div class="card">
+        <h2>Pricing table</h2>
+        <p class="muted">$ per million tokens. Cache read/write multipliers apply to a model's input rate unless overridden.</p>
+        <div class="table-wrap"><table id="pricing-table"></table></div>
+      </div>
+
+      <div class="card">
+        <h2>Add / update a model</h2>
+        <form id="pricing-form" class="pricing-form">
+          <input type="text" id="pf-model" placeholder="model name, e.g. claude-sonnet-5" required />
+          <input type="number" id="pf-input" placeholder="input $/MTok" step="0.01" min="0" required />
+          <input type="number" id="pf-output" placeholder="output $/MTok" step="0.01" min="0" required />
+          <button type="submit">Save</button>
+        </form>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="tooltip" class="tooltip" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
