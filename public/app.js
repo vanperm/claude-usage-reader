@@ -468,9 +468,10 @@ ${xLabelsMarkup(items, labelKey, scale, scale.bandX)}
 
     const updatedEl = document.getElementById('plan-usage-updated');
     if (data.lastUpdated) {
-      const ageMs = Date.now() - data.lastUpdated;
-      const stale = ageMs > 6 * 60 * 60 * 1000;
-      updatedEl.textContent = `Last updated ${new Date(data.lastUpdated).toLocaleString()} (from the Claude desktop app's local cache)${stale ? ' — looks stale, open the Claude app to refresh it' : ''}`;
+      const ageMin = Math.round((Date.now() - data.lastUpdated) / 60000);
+      const relative = ageMin < 1 ? 'under a minute ago' : ageMin === 1 ? '1 min ago' : `${ageMin} min ago`;
+      const idleNote = ageMin > 60 ? ' — this is longer than usual, the desktop app may be idle or closed' : '';
+      updatedEl.textContent = `As of ${relative} (${new Date(data.lastUpdated).toLocaleTimeString()}). The desktop app polls this in the background roughly every 15 min, so it can trail a bit behind Claude's own live usage panel.${idleNote}`;
     } else {
       updatedEl.textContent = '';
     }
